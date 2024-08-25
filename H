@@ -1,0 +1,81 @@
+// Create a window and renderer
+SDL_Window *window = SDL_CreateWindow("Love Symbol", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WIDTH, HEIGHT, SDL_WINDOW_SHOWN);
+SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+
+// Load a font
+TTF_Init();
+TTF_Font *font = TTF_OpenFont("arial.ttf", 24);
+
+// Get the name from the user
+char name[100];
+printf("Enter a name: ");
+fgets(name, sizeof(name), stdin);
+name[strlen(name) - 1] = '\0'; // remove the newline character
+
+// Create a texture for the name
+SDL_Color color = {255, 255, 255}; // white
+SDL_Surface *surface = TTF_RenderText_Solid(font, name, color);
+SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
+
+// Set up the video encoder
+AVCodec *codec = avcodec_find_encoder(AV_CODEC_ID_H264);
+AVCodecContext *c = avcodec_alloc_context3(codec);
+c->codec_id = AV_CODEC_ID_H264;
+c->codec_type = AVMEDIA_TYPE_VIDEO;
+c->width = WIDTH;
+c->height = HEIGHT;
+c->time_base.num = 1;
+c->time_base.den = FPS;
+c->gop_size = 10;
+c->max_b_frames = 1;
+c->pix_fmt = AV_PIX_FMT_YUV420P;
+
+// Open the video file
+FILE *file = fopen("output.mp4", "wb");
+avio_open(&c->pb, "output.mp4", AVIO_FLAG_WRITE);
+
+// Encode the video
+int frame_count = 0;
+while (frame_count < 100) { // 100 frames = 3.33 seconds at 30 FPS
+    SDL_RenderClear(renderer);
+
+    // Draw the heart shape
+    draw_heart(renderer, WIDTH / 2 - 100, HEIGHT / 2 - 100, 200, 200);
+
+    // Draw the name
+    SDL_Rect rect = {WIDTH / 2 - surface->w / 2, HEIGHT / 2 - surface->h / 2, surface->w, surface->h};
+    SDL_RenderCopy(renderer, texture, NULL, &rect);
+
+    // Update the screen
+    SDL_RenderPresent(renderer);
+
+    // Encode the frame
+    AVFrame *frame = av_frame_alloc();
+    frame->format = c->pix_fmt;
+    frame->width = c->width;
+    frame->height = c->height;
+    av_frame_get_buffer(frame, 32);
+    SDL_RenderReadPixels(renderer, NULL, SDL_PIXELFORMAT_YV12, frame->data[0], frame->linesize[0]);
+    avcodec_send_frame(c, frame);
+    AVPacket packet;
+    avcodec_receive_packet(c, &packet);
+    fwrite(packet.data, 1, packet.size, file);
+    av_packet_unref(&packet);
+    av_frame_free(&frame);
+
+    frame_count++;
+}
+
+// Clean up
+avcodec_close(c);
+av_free(c);
+fclose(file);
+SDL_DestroyTexture(texture);
+SDL_FreeSurface(surface);
+TTF_CloseFont(font);
+TTF_Quit();
+SDL_DestroyRenderer(renderer);
+SDL_DestroyWindow(window);
+SDL_Quit();
+
+return 0;
